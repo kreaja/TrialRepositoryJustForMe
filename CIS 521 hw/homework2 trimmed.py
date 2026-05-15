@@ -14,10 +14,6 @@ from math import factorial
 from math import prod
 
 ############################################################
-
-student_name = "David W. Nai"  # May 16, 2026
-
-############################################################
 # Section 1: N-Queens
 ############################################################
 
@@ -320,24 +316,3 @@ def distinct_disks_helper(length, board_state):
                 board_copy[index+2] = None
                 yield (index+2, index), tuple(board_copy)
 
-
-############################################################
-# Section 4: Feedback
-############################################################
-
-
-# Just an approximation is fine.
-feedback_question_1 = """
-6 hours.
-"""
-
-feedback_question_2 = """
-Most challenging was the coding -- dealing with lists of lists, and sets 
-containing tuples of tuples, actually gave me nausea. Conforming to arbitrary
-PEP 8 rules was also a pain.
-"""
-
-feedback_question_3 = """
-I found the assignment tiring, but I am glad to have completed these coding
-exercises; I feel somewhat smart now!
-"""
