@@ -1,2 +1,2 @@
 # TrialRepositoryJustForMe
-So I can finally get the goddamn Git, GitHub and GitHub Desktop working
+So I can finally get Git and GitHub working from the command line!
