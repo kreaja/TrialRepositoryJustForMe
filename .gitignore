@@ -1,3 +1,6 @@
 .DS_Store
 CIS 521 hw/.DS_Store
 CIS 521 hw/.DS_Store
+__pycache__/
+*.pyc
+.syncbox/
