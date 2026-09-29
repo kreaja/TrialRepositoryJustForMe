@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How Cloud File Sync Actually Works</title>
+<style>
+  @page { size: letter; margin: 0.85in 0.9in; }
+
+  :root {
+    --ink: #16181d;
+    --soft: #4a5058;
+    --faint: #8a9099;
+    --rule: #d8dce2;
+    --accent: #0f5c6e;
+    --accent-soft: #eaf3f5;
+    --warn: #8a4b12;
+    --warn-soft: #fdf3e7;
+    --code-bg: #f6f7f9;
+  }
+
+  html { font-size: 10.5pt; }
+  body {
+    margin: 0;
+    color: var(--ink);
+    font-family: "Charter", "Georgia", "Times New Roman", serif;
+    line-height: 1.52;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, .label, .tag, table, code, pre, .caption {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+
+  /* ---- title page ---- */
+  .title-page {
+    height: 8.6in;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    page-break-after: always;
+  }
+  .title-page .eyebrow {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 8.5pt; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin-bottom: 1.1em;
+  }
+  .title-page h1 {
+    font-size: 34pt; line-height: 1.08; margin: 0 0 0.4em 0;
+    letter-spacing: -0.022em; font-weight: 700;
+  }
+  .title-page .sub {
+    font-size: 13pt; color: var(--soft); line-height: 1.45;
+    max-width: 30em; margin: 0 0 2.4em 0;
+  }
+  .title-page .meta {
+    border-top: 2px solid var(--ink); padding-top: 0.9em;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 9pt; color: var(--soft); max-width: 34em;
+  }
+  .title-page .meta b { color: var(--ink); }
+
+  /* ---- headings ---- */
+  h2 {
+    font-size: 15pt; margin: 2.1em 0 0.55em; letter-spacing: -0.012em;
+    page-break-after: avoid; font-weight: 700;
+    border-bottom: 1.5px solid var(--ink); padding-bottom: 0.3em;
+  }
+  h2 .num { color: var(--accent); margin-right: 0.5em; }
+  h3 {
+    font-size: 11pt; margin: 1.5em 0 0.35em; page-break-after: avoid;
+    font-weight: 700; color: var(--ink);
+  }
+  h2 + h3 { margin-top: 1em; }
+  p { margin: 0 0 0.75em; }
+  p + p { text-indent: 0; }
+
+  a { color: var(--accent); text-decoration: none; }
+
+  /* ---- lists ---- */
+  ul, ol { margin: 0 0 0.85em; padding-left: 1.35em; }
+  li { margin-bottom: 0.32em; }
+  li > strong { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+                font-size: 0.93em; }
+
+  /* ---- code ---- */
+  code {
+    font-size: 0.86em; background: var(--code-bg); padding: 0.1em 0.32em;
+    border-radius: 3px; color: #24303a;
+  }
+  pre {
+    background: var(--code-bg); border-left: 3px solid var(--accent);
+    padding: 0.75em 0.95em; margin: 0.9em 0 1.1em; font-size: 8.4pt;
+    line-height: 1.5; overflow-x: auto; page-break-inside: avoid;
+    border-radius: 0 4px 4px 0; color: #24303a;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  pre .c { color: #7c8794; font-style: italic; }
+  pre .k { color: var(--accent); font-weight: 600; }
+
+  /* ---- callouts ---- */
+  .key {
+    background: var(--accent-soft); border: 1px solid #cfe2e6;
+    border-radius: 5px; padding: 0.75em 1em; margin: 1.1em 0;
+    page-break-inside: avoid;
+  }
+  .key .label {
+    font-size: 7.5pt; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; display: block; margin-bottom: 0.35em;
+  }
+  .key p:last-child { margin-bottom: 0; }
+
+  .trap {
+    background: var(--warn-soft); border: 1px solid #f0dcc2;
+    border-radius: 5px; padding: 0.75em 1em; margin: 1.1em 0;
+    page-break-inside: avoid;
+  }
+  .trap .label {
+    font-size: 7.5pt; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--warn); font-weight: 700; display: block; margin-bottom: 0.35em;
+  }
+  .trap p:last-child { margin-bottom: 0; }
+
+  /* ---- tables ---- */
+  table {
+    width: 100%; border-collapse: collapse; margin: 1em 0 1.2em;
+    font-size: 8.6pt; page-break-inside: avoid;
+  }
+  th {
+    text-align: left; border-bottom: 1.5px solid var(--ink);
+    padding: 0.45em 0.5em; font-size: 7.6pt; letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--soft); font-weight: 700;
+    vertical-align: bottom;
+  }
+  td {
+    padding: 0.45em 0.5em; border-bottom: 1px solid var(--rule);
+    vertical-align: top; line-height: 1.4;
+  }
+  td.y { color: var(--accent); font-weight: 700; }
+  td.n { color: var(--faint); }
+  tr.hl td { background: var(--accent-soft); }
+  .caption { font-size: 8pt; color: var(--faint); margin: -0.7em 0 1.4em; }
+
+  /* ---- diagram ---- */
+  .diagram { margin: 1.1em 0; page-break-inside: avoid; text-align: center; }
+  .diagram svg { max-width: 100%; height: auto; }
+
+  .pagebreak { page-break-before: always; }
+  .avoid { page-break-inside: avoid; }
+
+  .lede {
+    font-size: 11.5pt; color: var(--soft); line-height: 1.5;
+    border-left: 3px solid var(--rule); padding-left: 1em; margin: 0 0 1.6em;
+  }
+  .footer-note {
+    margin-top: 2.5em; padding-top: 0.8em; border-top: 1px solid var(--rule);
+    font-size: 8.5pt; color: var(--faint);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+</style>
+</head>
+<body>
+
+<section class="title-page">
+  <div class="eyebrow">Distributed systems, disguised as a folder</div>
+  <h1>How Cloud File Sync<br>Actually Works</h1>
+  <p class="sub">Why Dropbox, Google&nbsp;Drive, OneDrive and Box are much harder
+  than they look &mdash; and a small, complete, working engine that shows
+  exactly where the difficulty lives.</p>
+  <div class="meta">
+    <p><b>Companion code:</b> the <code>syncbox/</code> package in this
+    repository. About 2,900 lines of Python across twelve modules, standard
+    library only, plus 600 lines of tests &mdash; 58 of them, including a
+    randomised convergence fuzzer. A narrated demo runs with
+    <code>python&nbsp;-m&nbsp;syncbox.demo</code>.</p>
+    <p style="margin-bottom:0"><b>How to read this:</b> each section names a
+    problem, shows the mechanism that solves it, and points at the file where
+    that mechanism lives.</p>
+  </div>
+</section>
+
+<p class="lede">A sync engine is not a file-copying program. It is a
+replicated database with an unusually hostile schema, an unusually
+unreliable network, and a user interface that promises none of that is
+happening.</p>
+
+<h2><span class="num">1</span>Why this looks easy and isn't</h2>
+
+<p>Watch a folder. When a file changes, upload it. When the server has
+something new, download it. That is a weekend project, and it works
+beautifully right up until the moment there are two computers.</p>
+
+<p>Everything hard follows from three facts that a single-machine mental model
+does not contain:</p>
+
+<ul>
+  <li><strong>Changes originate in more than one place.</strong> The server is
+  not the author of the truth; it is one participant among several. Two
+  machines can each make a change without knowing about the other's.</li>
+  <li><strong>The network is not there when you need it.</strong> Edits happen
+  on planes, on trains, in basements. Work must accumulate locally and be
+  delivered later, possibly much later, possibly in a different order than it
+  was made.</li>
+  <li><strong>Nothing can be undone.</strong> A sync engine deletes and
+  overwrites the user's real files, on the strength of something another
+  machine told it. If the reasoning was wrong, the data is gone.</li>
+</ul>
+
+<p>Put together, the requirement is not "copy files" but: <em>keep several
+independent replicas of a mutable tree converging toward the same state,
+while any of them may be editing, and any of them may be
+unreachable.</em></p>
+
+<p>That is a distributed systems problem with a folder icon on it.</p>
+
+<h2><span class="num">2</span>The central insight: you need three views, not two</h2>
+
+<p>Here is the question that defeats the naive design. Your laptop has no file
+called <code>notes.txt</code>. The server has one. What should happen?</p>
+
+<p>You cannot answer. Two completely different histories produce that exact
+situation:</p>
+
+<div class="diagram">
+<svg viewBox="0 0 620 190" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <rect x="8" y="8" width="290" height="174" rx="6" fill="#f6f7f9" stroke="#d8dce2"/>
+  <rect x="322" y="8" width="290" height="174" rx="6" fill="#f6f7f9" stroke="#d8dce2"/>
+  <text x="24" y="32" font-size="11" font-weight="700" fill="#16181d">History A</text>
+  <text x="24" y="50" font-size="10" fill="#4a5058">A friend created it on their machine.</text>
+  <text x="338" y="32" font-size="11" font-weight="700" fill="#16181d">History B</text>
+  <text x="338" y="50" font-size="10" fill="#4a5058">You deleted it here, last Tuesday.</text>
+
+  <text x="24" y="86" font-size="9.5" fill="#8a9099">LOCAL</text>
+  <text x="110" y="86" font-size="9.5" fill="#16181d">— absent —</text>
+  <text x="24" y="110" font-size="9.5" fill="#8a9099">REMOTE</text>
+  <text x="110" y="110" font-size="9.5" fill="#16181d">notes.txt</text>
+  <text x="24" y="134" font-size="9.5" fill="#0f5c6e" font-weight="700">BASE</text>
+  <text x="110" y="134" font-size="9.5" fill="#0f5c6e" font-weight="700">— absent —</text>
+  <text x="24" y="162" font-size="9.5" fill="#16181d" font-weight="700">⇒ download it</text>
+
+  <text x="338" y="86" font-size="9.5" fill="#8a9099">LOCAL</text>
+  <text x="424" y="86" font-size="9.5" fill="#16181d">— absent —</text>
+  <text x="338" y="110" font-size="9.5" fill="#8a9099">REMOTE</text>
+  <text x="424" y="110" font-size="9.5" fill="#16181d">notes.txt</text>
+  <text x="338" y="134" font-size="9.5" fill="#0f5c6e" font-weight="700">BASE</text>
+  <text x="424" y="134" font-size="9.5" fill="#0f5c6e" font-weight="700">notes.txt</text>
+  <text x="338" y="162" font-size="9.5" fill="#16181d" font-weight="700">⇒ delete it there</text>
+</svg>
+</div>
+<p class="caption">Identical LOCAL and REMOTE. Opposite correct actions. Only BASE distinguishes them.</p>
+
+<p><strong>BASE</strong> is what this machine and the server last agreed on. It
+is stored locally, it is updated only after a change has actually been applied,
+and it is the entire reason the engine can tell a <em>create</em> from a
+<em>delete</em> &mdash; or, more generally, tell <em>which side moved</em>.</p>
+
+<div class="key">
+  <span class="label">The one thing to remember</span>
+  <p>Sync is a three-way merge, not a two-way comparison. LOCAL versus REMOTE
+  tells you that the replicas differ. LOCAL versus BASE versus REMOTE tells you
+  <em>why</em>, and only that answers what to do. This is the same structure git
+  uses for a merge, for the same reason.</p>
+</div>
+
+<p>In the companion code this is <code>planner.py</code>, and it is deliberately
+a <em>pure function</em>: three dictionaries in, a list of actions out. No disk,
+no network, no clock. That is what makes it testable, and it is why the demo can
+print the plan and its reasoning before executing a single byte of it.</p>
+
+<h2><span class="num">3</span>Identity: what makes two files "the same file"</h2>
+
+<p>Before you can compare three views you need to say what a file <em>is</em>.
+The tempting answers are all wrong.</p>
+
+<p><strong>Not the path.</strong> Files get renamed and moved, and the content
+did not change.</p>
+
+<p><strong>Not the modification time.</strong> Clocks disagree between machines,
+step backwards when NTP corrects them, and have coarse resolution on some
+filesystems. Worse, plenty of tools set mtime deliberately &mdash;
+<code>rsync&nbsp;-t</code>, tar extraction, build systems.</p>
+
+<p><strong>The content itself,</strong> named by a cryptographic hash. This one
+decision pays for itself repeatedly:</p>
+
+<ul>
+  <li>Comparing versions across a network becomes a 16-byte comparison rather
+  than a transfer.</li>
+  <li>"Did this really change, or did something just touch the timestamp?"
+  becomes answerable.</li>
+  <li>Renames become free &mdash; same content id, different path, zero bytes
+  transferred.</li>
+  <li>Deduplication falls out automatically. Ten thousand users syncing the same
+  PDF cost the provider one copy.</li>
+</ul>
+
+<h3>Chunking, and why a one-byte insert isn't a full re-upload</h3>
+
+<p>Hash the whole file and any change re-uploads everything. So split files into
+pieces and transfer only the changed pieces &mdash; but <em>not</em> at fixed
+offsets. Insert one byte at the front of a fixed-block file and every block
+shifts; nothing matches; you upload the lot.</p>
+
+<p>Instead, let the content choose the boundaries. Slide a cheap rolling hash
+over the bytes and cut wherever its value hits a pattern. Now an edit perturbs
+only the chunks around it, and the boundaries re-synchronise on their own
+within one chunk. This is <em>content-defined chunking</em>, and it is the same
+trick underneath rsync, restic, borg and every serious backup tool.</p>
+
+<p>Measured on the companion implementation, against a 300&nbsp;KB file:</p>
+
+<table>
+  <tr><th>Edit</th><th>Chunks reused</th><th>Bytes that cross the wire</th></tr>
+  <tr><td>Insert 36 bytes in the middle</td><td>30 of 31</td><td>21,161 &nbsp;(7.1% of the file)</td></tr>
+  <tr><td>Overwrite 10 bytes near the end</td><td>30 of 31</td><td>12,839 &nbsp;(4.3%)</td></tr>
+  <tr><td>Prepend a header</td><td>30 of 31</td><td>58,281 &nbsp;(19.4%)</td></tr>
+</table>
+<p class="caption">A fixed-block scheme would reuse nothing after the edit point in rows 1 and 3.</p>
+
+<div class="trap">
+  <span class="label">Bug found while writing this</span>
+  <p>The first version of the rolling hash built its 256-entry random table
+  with <code>random.Random(seed).getrandbits(64)</code> inside the loop &mdash;
+  re-seeding every iteration, so all 256 entries were identical. The hash then
+  depended only on how many bytes it had seen, never on which bytes, and no cut
+  condition ever fired. Chunking silently degraded to fixed maximum-size blocks
+  and dedup did nothing. It still passed every "does the file round-trip
+  correctly?" test. Measure the property you actually want.</p>
+</div>
+
+<h2 class="pagebreak"><span class="num">4</span>Ordering: version vectors, because timestamps lie</h2>
+
+<p>Given two versions of a file, which is newer? If you answer with wall-clock
+timestamps, a laptop running forty seconds fast wins every race it enters,
+forever, including the ones it should lose.</p>
+
+<p>But the deeper problem is that "newer" is the wrong question. The right one
+is: <strong>did this edit happen knowing about that one?</strong> Two people
+editing the same file on two planes produce two edits with different
+timestamps, and neither supersedes the other. Picking the later one silently
+destroys real work, with no error and no trace.</p>
+
+<p>A <em>version vector</em> answers the right question. Each replica has a
+stable id; each file carries a map from replica id to a counter:</p>
+
+<pre><code>{"laptop": 3, "desktop": 1}   <span class="c"># incorporates 3 edits from laptop, 1 from desktop</span></code></pre>
+
+<p>A replica bumps <em>only its own</em> counter when it changes a file.
+Comparison becomes structural rather than chronological:</p>
+
+<table>
+  <tr><th>Relation</th><th>Meaning</th><th>What the engine does</th></tr>
+  <tr><td><code>A</code> dominates <code>B</code></td><td>Every counter in A is ≥ B's, and they differ. A already contains everything B knows.</td><td>Safe to overwrite B with A</td></tr>
+  <tr><td><code>A == B</code></td><td>Same version.</td><td>Nothing</td></tr>
+  <tr class="hl"><td><b>concurrent</b></td><td>A knows something B doesn't <em>and</em> B knows something A doesn't.</td><td>A genuine conflict. No algorithm can resolve it; a policy must.</td></tr>
+</table>
+
+<p>That third row is the whole reason this problem is hard, and it is exactly
+the row timestamps paper over by pretending it cannot happen.</p>
+
+<div class="key">
+  <span class="label">Cost, honestly</span>
+  <p>A version vector is O(number of replicas that ever touched the file). Fine
+  for a handful of personal devices; a real problem at Drive scale with
+  thousands of collaborators. Large systems use variants — server-assigned
+  monotonic revisions with a single ordering point, dotted version vectors, or
+  a "last writer plus causal context" set. The reasoning is identical; only the
+  encoding shrinks.</p>
+</div>
+
+<h2><span class="num">5</span>What the server actually owes its clients</h2>
+
+<p>Surprisingly little, and all of it is about ordering.</p>
+
+<ol>
+  <li><strong>A total order on changes,</strong> exposed as a resumable feed:
+  "give me everything after position N." This is Dropbox's <code>/delta</code>,
+  Drive's <code>changes.list</code>, OneDrive's delta query. The server being a
+  single serialisation point is what makes the distributed problem
+  tractable at all.</li>
+  <li><strong>Compare-and-swap on every write.</strong> The client says "store
+  this, and I believe the current version is X." If it isn't X, the write is
+  <em>rejected</em> — not merged, not clobbered.</li>
+  <li><strong>Idempotence.</strong> Networks fail in the worst possible way:
+  after the server commits, before the client hears about it. The client cannot
+  distinguish that from "never arrived," so it must retry, and the retry must
+  not duplicate.</li>
+  <li><strong>Integrity.</strong> Verify the hash of everything stored and
+  everything served.</li>
+</ol>
+
+<p>Note what is <em>not</em> on the list: the server does not resolve conflicts.
+It detects them and refuses. Resolution happens on the client, because only the
+client can see both versions' content — and in an end-to-end-encrypted design
+the server could not read them even if it wanted to.</p>
+
+<h3>Why compare-and-swap, specifically</h3>
+
+<p>Without it you get the classic lost update. Two clients read version 5, both
+write version 6, and one edit vanishes with no error anywhere in the system.
+CAS converts that silent loss into a loud rejection, which the client then
+resolves with the ordinary three-way machinery. From the demo:</p>
+
+<pre><code>  phone's plan, built against the world as it was:
+    push           notes/race.txt  -- created locally
+
+  -- ...but the laptop commits first -----------------------------
+    push           notes/race.txt  -- created locally
+
+  -- phone now executes its stale plan ---------------------------
+      note: server rejected our write (someone else committed first)
+      CAS rejections so far: 1
+
+  files surviving:
+    notes/race (conflicted copy from phone ...).txt  ->  "the phone's version"
+    notes/race.txt                                   ->  "the laptop's version"
+
+  neither edit was lost: True</code></pre>
+
+<h3>Idempotence, and the deterministic operation id</h3>
+
+<p>The usual advice is "attach a unique request id." The subtlety is <em>where
+it comes from</em>. A randomly generated id is forgotten when the process
+restarts — which is precisely the moment you need it. So derive it from the
+intent instead:</p>
+
+<pre><code><span class="k">def</span> _op_id(replica, kind, path, content_id, vv):
+    h = blake2b(digest_size=12)
+    h.update(<span class="k">"|"</span>.join([replica, kind, path, content_id, vv.to_json()]).encode())
+    <span class="k">return</span> f<span class="k">"{replica}:{h.hexdigest()}"</span></code></pre>
+
+<p>The same intent always produces the same id, across retries, across crashes,
+across restarts. The server recognises the replay and answers from its memo
+table rather than committing twice.</p>
+
+<h2 class="pagebreak"><span class="num">6</span>The decision table</h2>
+
+<p>All of the above collapses into one small table, evaluated per path. Let
+<em>local changed</em> mean LOCAL differs from BASE, and <em>remote changed</em>
+mean REMOTE's version vector carries something BASE's does not.</p>
+
+<table>
+  <tr><th style="width:14%">Local<br>changed</th><th style="width:14%">Remote<br>changed</th><th style="width:34%">Situation</th><th>Action</th></tr>
+  <tr><td class="n">no</td><td class="n">no</td><td>In sync</td><td>Nothing</td></tr>
+  <tr><td class="y">yes</td><td class="n">no</td><td>We edited, created or deleted it</td><td>Push to server</td></tr>
+  <tr><td class="n">no</td><td class="y">yes</td><td>They edited, created or deleted it</td><td>Pull to disk</td></tr>
+  <tr class="hl"><td class="y">yes</td><td class="y">yes</td><td>Both sides moved</td><td>Look at where they ended up ↓</td></tr>
+</table>
+
+<table>
+  <tr><th style="width:34%">Where both sides ended up</th><th>Action</th></tr>
+  <tr><td>Identical content</td><td>Not a conflict at all. Adopt the server's vector and move on. (Both machines ran the same formatter; both deleted the same junk file.) Catching this case prevents a great deal of spurious noise.</td></tr>
+  <tr><td>Deleted here, edited there</td><td><b>Resurrect.</b> Keep the remote file. A deletion is cheap for a human to repeat; an edit is not.</td></tr>
+  <tr><td>Edited here, deleted there</td><td><b>Keep local</b> and re-create it on the server. Same reasoning, other direction.</td></tr>
+  <tr><td>Both edited, and it's text</td><td>Attempt a three-way merge against the common ancestor.</td></tr>
+  <tr><td>Anything else</td><td><b>Conflict split:</b> the remote version keeps the path, ours is preserved as a conflicted copy and uploaded as a file in its own right.</td></tr>
+</table>
+
+<p>That last row hides a detail worth stating explicitly. <em>Why does the
+remote version keep the original name?</em> Because every peer resolving this
+same conflict independently then makes the same choice, and they converge
+without another round of negotiation. If the local version kept the name, two
+machines would each believe their own edit was canonical, and they would
+conflict again, forever.</p>
+
+<h3>Move detection</h3>
+
+<p>Once the per-path decisions exist, look at the plan as a whole. A delete of
+content X at one path plus a create of the same content X at another is almost
+certainly a rename. Collapsing that pair into a single move is what keeps
+renaming a 4&nbsp;GB folder from becoming a 4&nbsp;GB upload:</p>
+
+<pre><code>  -- laptop renames archive/big.iso to vault/big.iso -------------
+    move-remote    archive/big.iso -> vault/big.iso
+                   -- metadata only, no bytes transferred
+      bytes uploaded for the rename: 0
+
+  -- phone applies the rename ------------------------------------
+    move-local     archive/big.iso -> vault/big.iso
+                   -- renaming on disk instead of downloading
+      bytes downloaded by phone:     0</code></pre>
+
+<p>It is a heuristic: copy a file and delete the original and the engine will
+call it a move, which produces the right final state anyway. Where the OS
+offers real file identity — inode on Unix, file id on NTFS — a production
+client tracks that instead of inferring.</p>
+
+<h2><span class="num">7</span>Conflicts: there is no clever answer</h2>
+
+<p>If two people changed the same JPEG on two machines with no communication
+between them, no algorithm produces "the right" JPEG. The engineering question
+is not how to avoid that but what to do that never loses work and never
+surprises the user. Three families of answer:</p>
+
+<h3>Keep both — the conflicted copy</h3>
+<p>One version keeps the path; the other is renamed to something a human can
+understand: <code>budget (conflicted copy from laptop 2026-09-03 14-22-05).xlsx</code>.
+Impossible to lose data, requires no understanding of the file format, and the
+user can see what happened without reading a log. The vice is that it pushes
+the work onto the user, and in a shared folder it can spray copies everywhere.
+This is the universal default, and Dropbox's version is the one everyone
+recognises.</p>
+
+<h3>Merge, if you understand the format</h3>
+<p>Line-oriented text is the classic case. The three-way merge in the companion
+code is the one git uses: compare each side <em>against the common ancestor</em>
+rather than against each other, so an insertion is distinguishable from a
+deletion, and only genuinely overlapping regions are flagged.</p>
+
+<pre><code>  ancestor:  milk / bread / eggs
+  laptop:    milk / bread / eggs / coffee      <span class="c"># appended a line</span>
+  phone:     oat milk / bread / eggs           <span class="c"># changed line 1</span>
+
+  merged:    oat milk / bread / eggs / coffee  <span class="c"># both edits kept, cleanly</span></code></pre>
+
+<p>Google Docs takes this much further: it does not store documents as files at
+all, but as an ordered stream of operations merged by operational
+transformation, so concurrent edits <em>compose</em> instead of conflicting.
+That is precisely why Docs has no conflicted copies while Drive-syncing
+a <code>.docx</code> does. The lesson generalises: <strong>the conflict problem
+gets easier the more the system understands the data</strong> — and a
+general-purpose file sync engine, by definition, understands nothing.</p>
+
+<div class="trap">
+  <span class="label">A product decision, not a technical one</span>
+  <p>When a text merge <em>fails</em>, the companion engine does not write
+  <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> markers into the user's document.
+  Conflict markers are a programmer's convention; a spreadsheet user opening a
+  file full of them has simply had their file corrupted. Unmergeable means
+  conflicted copy, like everything else.</p>
+</div>
+
+<h3>Prevent conflicts entirely</h3>
+<p>Lock files while someone has them open (Box and SharePoint offer this), make
+everything append-only, or use CRDTs whose merge is mathematically guaranteed
+to converge. Each trades away either offline editing or generality, which is
+why none of them is the default for whole-filesystem sync.</p>
+
+<h2 class="pagebreak"><span class="num">8</span>Deletion, and the file that rises from the dead</h2>
+
+<p>The naive model is "a path either has a file or it doesn't." That model
+cannot express deletion in a distributed system, and the failure is famous.</p>
+
+<p>Machine A deletes <code>notes.txt</code> while offline, then reconnects. The
+server sees that A no longer has the file and B still does. Is that a delete on
+A that must propagate to B, or a create on B that must propagate to A?
+<strong>Absence carries no information.</strong> Without a record saying "this
+was deliberately deleted, at this version," the deleted file comes back on the
+next sync — and comes back again, forever.</p>
+
+<p>So deletion is not the removal of a record. It is the writing of a
+<em>different</em> record: a <strong>tombstone</strong>, with its own version
+vector, which propagates like any other change and can itself be superseded by
+someone re-creating the file.</p>
+
+<pre><code>  -- laptop deletes it -------------------------------------------
+    delete-remote  notes/temp.txt  -- deleting locally; propagating
+      server record is now: notes/temp.txt [deleted {laptop:2}]
+
+  -- phone applies the deletion ----------------------------------
+    delete-local   notes/temp.txt  -- deleted elsewhere; removing our copy
+
+  phone still does not have it: True   <span class="c"># after repeated re-syncs</span></code></pre>
+
+<h3>Collecting tombstones without resurrecting anything</h3>
+
+<p>Tombstones accumulate, so they must eventually be collected — but you cannot
+expire them on a timer. A laptop that has been in a drawer for six months still
+has the file and still believes it is synced. If the tombstone is gone when it
+wakes up, the file looks brand new and gets helpfully re-uploaded.</p>
+
+<p>So collection is gated on the <strong>minimum cursor across all known
+replicas</strong>: drop only what everybody has demonstrably seen. A replica
+that never returns pins its tombstones indefinitely — which is exactly why
+these products eventually unenroll devices that have been silent too long, and
+accept the (now explicit, now bounded) risk for those.</p>
+
+<h2><span class="num">9</span>Touching the user's files without destroying them</h2>
+
+<p>This is where a bug is not a bug but a support ticket about a lost thesis.</p>
+
+<h3>Never write into the destination</h3>
+<pre><code>  write to a temporary file <span class="c">in the same filesystem</span>
+  fsync the file            <span class="c"># bytes are actually on the medium</span>
+  rename over the target    <span class="c"># atomic: readers see old or new, never half</span>
+  fsync the directory       <span class="c"># the rename itself is durable</span></code></pre>
+
+<p>"Same filesystem" matters because a cross-device rename is really a copy plus
+a delete, which is not atomic at all. Both fsyncs matter too, and both are
+routinely skipped: without the first, the rename can be durable while the
+contents are not, and you get a correctly-named file full of zeros after a power
+cut. Without the second, the rename can be lost.</p>
+
+<h3>Deleting is never deleting</h3>
+<p>The engine deletes files because a <em>remote machine</em> said so. If
+anything upstream was wrong — a bug, a bad merge, a compromised account, a user
+who didn't mean it — that is unrecoverable and it is your fault. So local
+deletions move to a trash area and age out later. This is why every one of these
+products has a "restore deleted files" window: not as a courtesy, but because
+the engine can never be certain enough to actually unlink something.</p>
+
+<h3>Order of operations, and rename cycles</h3>
+<p>Actions must leave the tree in a legal state at every intermediate step:
+deletes deepest-first (you cannot remove a non-empty directory), creates
+shallowest-first (a parent must exist before its child), conflicts preserved
+before anything is overwritten.</p>
+
+<p>And users really do swap two directories. A set of renames is a permutation,
+and every permutation decomposes into chains and cycles. Chains resolve
+themselves if you always pick a move whose destination nobody still has to
+vacate. Cycles have no such move — every destination is occupied by something
+itself waiting to move — and need exactly one temporary name to break:</p>
+
+<pre><code><span class="k">def</span> apply_moves(moves):
+    drain_chains()                     <span class="c"># any move whose destination is already free</span>
+    <span class="k">while</span> pending:                    <span class="c"># whatever is left must be a cycle</span>
+        origin, final = pending.popitem()
+        move(origin, staging)          <span class="c"># vacate one slot...</span>
+        drain_chains()                 <span class="c"># ...and the cycle is now a chain</span>
+        deferred.append((staging, final))
+    <span class="k">for</span> staging, final <span class="k">in</span> deferred:
+        move(staging, final)</code></pre>
+
+<h2><span class="num">10</span>Being offline gracefully</h2>
+
+<p>Three mechanisms, and one idea underneath all of them.</p>
+
+<p><strong>Resumable uploads with no client-side progress state.</strong> On
+retry, ask the server which chunks it is still missing and send those. The
+server's own contents <em>are</em> the resume point, so there is no progress
+file to keep in sync, nothing to corrupt, and a resume works from a different
+machine. Content-addressed chunking and resumability turn out to be the same
+feature.</p>
+
+<p><strong>Exponential backoff with jitter.</strong> The jitter is not
+decoration. If a provider has an outage and ten million clients retry on
+identical schedules, recovery brings a synchronised thundering herd that knocks
+the service over again.</p>
+
+<p><strong>A write-ahead journal of intents,</strong> written before acting and
+cleared after, so a process killed mid-operation can replay. Combined with the
+ordering discipline:</p>
+
+<pre><code>  apply the change  →  fsync  →  update BASE  →  clear the journal</code></pre>
+
+<p>Any other order and a crash in the gap either loses a change or re-applies
+one. Update BASE first and the client believes it synced something it did not —
+which is how a file silently stops syncing forever.</p>
+
+<div class="key">
+  <span class="label">The idea underneath</span>
+  <p>Make every step re-runnable, and you no longer need to remember where you
+  were. The reconciler derives its plan freshly from the world on every cycle,
+  so there is no "resume from step 7" logic anywhere. This is the single biggest
+  simplification available in the whole problem, and it is why the change feed
+  can get away with cheap at-least-once delivery: applying a change you already
+  have is a no-op, because the comparison is on content, not on events.</p>
+</div>
+
+<h2 class="pagebreak"><span class="num">11</span>The mundane hell</h2>
+
+<p>None of this is intellectually interesting. All of it will generate bug
+reports.</p>
+
+<ul>
+  <li><strong>Unicode normalisation.</strong> macOS historically stored
+  filenames decomposed (NFD): "é" as "e" plus a combining accent. Linux stores
+  whatever bytes it is given. So <code>résumé.pdf</code> has two byte
+  representations that are one name to a human. An engine that does not
+  normalise will create both, forever, in a loop.</li>
+  <li><strong>Case sensitivity.</strong> Linux distinguishes
+  <code>Report.txt</code> from <code>report.txt</code>; Windows and default
+  macOS do not. Syncing a Linux folder containing both to a Mac is not a
+  transfer problem, it is a modelling problem with no good answer.</li>
+  <li><strong>Reserved names and characters.</strong> <code>CON</code>,
+  <code>PRN</code>, <code>NUL</code>, <code>COM1</code>–<code>LPT9</code>,
+  trailing spaces and dots, <code>: * ? " &lt; &gt; |</code> — all fine on
+  Linux, all impossible or silently mangled on Windows. A Linux client can
+  otherwise upload a file that no Windows peer can ever materialise.</li>
+  <li><strong>Path length.</strong> Classic Windows caps at 260 characters, so a
+  deeply nested tree that syncs fine everywhere else fails on one machine — and
+  fails <em>partway</em>, leaving that replica permanently unable to converge.</li>
+  <li><strong>Symlinks, hardlinks, sparse files, extended attributes,
+  resource forks, permissions.</strong> Follow a symlink and you may loop
+  forever or export files from outside the sync root. Store it faithfully and
+  Windows cannot represent it. Whatever you choose, choose it explicitly.</li>
+  <li><strong>Watcher overflow.</strong> inotify queues fill up under load and
+  tell you only that events were lost. FSEvents coalesces. Nothing at all fires
+  while your process is not running, and network mounts often have no watcher.
+  So the file watcher is an <em>optimisation</em> that tells you where to look,
+  and a periodic full scan remains the correctness backstop. You can never
+  delete the scanner.</li>
+  <li><strong>The hash cache is a lie you accept.</strong> Rehashing 100&nbsp;GB
+  every cycle is out of the question, so clients cache
+  <code>(inode, size, mtime, ctime) → hash</code>. It is possible to modify a
+  file and land on the same size and mtime, so the mitigation is to include
+  ctime (which a user cannot set directly), re-hash anything modified within a
+  timestamp tick of now, and re-verify everything in the background
+  periodically.</li>
+  <li><strong>Files that change while you read them.</strong> Databases, virtual
+  machine images and log files are written continuously. You will upload a
+  torn read; the question is only whether you notice.</li>
+</ul>
+
+<h2><span class="num">12</span>What you are actually promising</h2>
+
+<p>State the consistency model plainly, because users will assume something
+much stronger:</p>
+
+<ul>
+  <li><strong>Per file: linearizable.</strong> Every version of a given path is
+  totally ordered by the compare-and-swap chain, and no update is ever silently
+  lost.</li>
+  <li><strong>Across files: not atomic.</strong> There is no transaction
+  spanning two paths. Save a <code>.tex</code> and its <code>.bib</code>
+  together and a peer may briefly see the new one with the old other. Every
+  consumer product works this way, because cross-file transactions over a wide
+  area network with offline participants would mean blocking on unavailable
+  peers.</li>
+  <li><strong>Overall: eventually consistent.</strong> If everyone stops editing
+  and stays connected long enough, all replicas converge to the same state.
+  Not immediately, not atomically. <em>Eventually.</em></li>
+</ul>
+
+<p>Convergence is therefore the property worth testing, and it is the one the
+companion code fuzzes: three replicas, random creates, edits, deletes and
+renames, random disconnections, 30% packet loss, then everybody reconnects and
+syncs until quiet. The assertion is not <em>what</em> the final tree contains —
+that depends on conflict policy — only that all three replicas agree on it.</p>
+
+<div class="trap">
+  <span class="label">Case study: the bug only the fuzzer could find</span>
+  <p>At one seed in forty, three replicas failed to converge. The cause was in
+  move detection. Replica <em>three</em> had deleted <code>b.txt</code> locally
+  and happened to hold a file elsewhere with <code>b.txt</code>'s old content,
+  so the planner paired them into a rename. But the destination path already
+  had its own history on the server — a tombstone written by the other two
+  replicas. The synthesised move carried the <em>source</em> path's version
+  vector to the <em>destination</em>, where it could not dominate what was
+  already there, so compare-and-swap rejected it. The next cycle rescanned,
+  reasoned identically, and produced exactly the same doomed plan.</p>
+  <p>Not a crash, not a transient failure: a permanent stall, invisible except
+  as one replica quietly never catching up. The fix is a one-line guard — only
+  collapse a delete and a create into a move when the destination is unknown to
+  the server as well as to us — but no amount of staring at the decision table
+  would have surfaced it. <strong>Interleaving bugs are found by interleaving.</strong></p>
+</div>
+
+<h2><span class="num">13</span>What a real one adds</h2>
+
+<p>The companion engine is complete in structure and deliberately small in
+scope. The distance to a product is mostly in these:</p>
+
+<ul>
+  <li><strong>Scale of metadata.</strong> Hundreds of millions of users' file
+  metadata does not fit in one database. Shard by user or by namespace, and
+  accept that a shared folder spanning shards is now a distributed transaction
+  problem of its own.</li>
+  <li><strong>Sharing and permissions.</strong> This is where the difficulty
+  genuinely jumps. Other people's ACL changes become events in your feed; a
+  file can leave your namespace because someone else revoked access; two users
+  with different permissions must see consistent but different trees.</li>
+  <li><strong>Streaming.</strong> Files larger than memory need chunk-at-a-time
+  hashing, upload and verification rather than the whole-blob approach used
+  here for clarity.</li>
+  <li><strong>Concurrency.</strong> Real clients run many transfers at once with
+  a bounded pool, while preserving per-path ordering.</li>
+  <li><strong>Selective sync and placeholders.</strong> "This file exists but
+  isn't downloaded" means a filesystem driver — Windows Cloud Files API, macOS
+  File Provider — and a whole second consistency problem between the placeholder
+  state and the real state.</li>
+  <li><strong>Encryption.</strong> End-to-end encryption breaks server-side
+  dedup and makes conflict resolution strictly a client concern. Convergent
+  encryption gets some dedup back and leaks whether you have a given file.</li>
+  <li><strong>LAN sync</strong>, bandwidth shaping, battery and thermal
+  awareness, and the enormous amount of work in <em>not</em> syncing at the
+  wrong moment.</li>
+</ul>
+
+<h2><span class="num">14</span>Running the companion code</h2>
+
+<pre><code>  python -m syncbox.demo                            <span class="c"># 11 narrated scenarios</span>
+  python -m unittest discover -s tests -t .         <span class="c"># 58 tests, ~3 seconds</span></code></pre>
+
+<table>
+  <tr><th style="width:24%">File</th><th>What it is for</th></tr>
+  <tr><td><code>planner.py</code></td><td>The reconciler. Pure function, three views in, an ordered plan out. <b>Start here.</b></td></tr>
+  <tr><td><code>clock.py</code></td><td>Version vectors: newer vs. different vs. concurrent.</td></tr>
+  <tr><td><code>hashing.py</code></td><td>Content addressing and content-defined chunking.</td></tr>
+  <tr><td><code>fsmodel.py</code></td><td>Nodes, tombstones, path normalisation and safety.</td></tr>
+  <tr><td><code>scanner.py</code></td><td>Cheap snapshots via the hash cache; the watcher shim.</td></tr>
+  <tr><td><code>db.py</code></td><td>The client's durable memory: BASE, the REMOTE mirror, the journal.</td></tr>
+  <tr><td><code>server.py</code></td><td>Blob store, compare-and-swap metadata, change feed, tombstone GC.</td></tr>
+  <tr><td><code>transport.py</code></td><td>A deliberately unreliable network, with resumable uploads.</td></tr>
+  <tr><td><code>applier.py</code></td><td>Atomic writes, trash, rename cycles.</td></tr>
+  <tr><td><code>merge.py</code></td><td>Conflict policy: conflicted copies and three-way text merge.</td></tr>
+  <tr><td><code>client.py</code></td><td>One sync cycle, assembled from the above.</td></tr>
+  <tr><td><code>demo.py</code></td><td>The scenarios, narrated with the planner's own reasoning.</td></tr>
+</table>
+
+<h2><span class="num">15</span>Where to read further</h2>
+
+<ul>
+  <li><strong>Unison</strong> (Benjamin Pierce et al.) — the academic
+  bidirectional synchroniser. Its papers state the reconciliation algorithm and
+  its correctness properties precisely; this is the clearest formal treatment of
+  the three-way structure.</li>
+  <li><strong>The rsync algorithm</strong> (Tridgell &amp; Mackerras, 1996) —
+  the origin of rolling-hash delta transfer.</li>
+  <li><strong>"Dynamo: Amazon's Highly Available Key-value Store"</strong> —
+  version vectors, concurrent writes and application-level conflict resolution,
+  in a system that made those trade-offs explicit.</li>
+  <li><strong>"A comprehensive study of Convergent and Commutative Replicated
+  Data Types"</strong> (Shapiro et al.) — CRDTs, i.e. what becomes possible when
+  merge is guaranteed to converge by construction.</li>
+  <li><strong>Dropbox's engineering blog on Nucleus</strong> — a rewrite of the
+  sync engine in Rust, and unusually candid about which parts of the original
+  design did not survive contact with scale.</li>
+  <li><strong>Git's merge internals</strong> — the same three-way merge, very
+  well documented, in a system you can inspect at will.</li>
+</ul>
+
+<div class="footer-note">
+  Written as a companion to the <code>syncbox</code> package in this repository.
+  The measurements, traces and the case study in section&nbsp;12 are real output
+  from that code, not illustrations.
+</div>
+
+</body>
+</html>
